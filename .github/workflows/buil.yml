@@ -1,0 +1,48 @@
+name: Build Poly Studio
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: SolidCraft commit to build from
+        default: c47e848f4a885941e03c2c3bd9408bb07aba83be
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: kit
+      - uses: actions/checkout@v4
+        with:
+          repository: tangency-labs/solidcraft
+          ref: ${{ inputs.upstream_ref }}
+          path: upstream
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - run: python kit/rebrand.py upstream poly-studio
+      - run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: poly-studio
+      - name: Build
+        working-directory: poly-studio
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release -p solidcraft --target x86_64-pc-windows-msvc
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force PolyStudio\legal | Out-Null
+          Copy-Item poly-studio\target\x86_64-pc-windows-msvc\release\solidcraft.exe PolyStudio\PolyStudio.exe
+          foreach ($f in 'LICENSE-MIT','LICENSE-APACHE','NOTICE','ATTRIBUTION.md','THIRD-PARTY-LICENSES.txt','POLYSTUDIO.md') { Copy-Item "poly-studio\$f" PolyStudio\legal }
+          Compress-Archive -Path PolyStudio -DestinationPath PolyStudio-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PolyStudio-windows-x64
+          path: PolyStudio-windows-x64.zip
